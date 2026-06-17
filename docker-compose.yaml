@@ -1,8 +1,10 @@
 services:
   gateway:
-    build: ./gateway-service
+    build: ./gateway
     container_name: ${GATEWAY_CONTAINER_NAME:-gateway}
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "${GATEWAY_PORT:-8080}:8080"
     environment:
