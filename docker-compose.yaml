@@ -1,6 +1,6 @@
 services:
   gateway:
-    build: ./gateway
+    build: .
     container_name: ${GATEWAY_CONTAINER_NAME:-gateway}
     restart: unless-stopped
     env_file:
@@ -29,7 +29,7 @@ services:
       start_period: 30s
 
   auth-service:
-    build: ./authenticationservice
+    build: ../authenticationservice
     container_name: ${AUTH_CONTAINER_NAME:-auth-service}
     restart: unless-stopped
     env_file:
@@ -61,7 +61,7 @@ services:
       start_period: 30s
 
   user-service:
-    build: ./userservice
+    build: ../userservice
     container_name: ${USER_CONTAINER_NAME:-user-service}
     restart: unless-stopped
     env_file:
@@ -94,7 +94,7 @@ services:
       start_period: 30s
 
   order-service:
-    build: ./orderservice
+    build: ../orderservice
     container_name: ${ORDER_CONTAINER_NAME:-order-service}
     restart: unless-stopped
     env_file:
@@ -132,9 +132,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./db/init-user-schema.sql:/docker-entrypoint-initdb.d/init-user-schema.sql
-      - ./db/init-auth-schema.sql:/docker-entrypoint-initdb.d/init-auth-schema.sql
-      - ./db/init-order-schema.sql:/docker-entrypoint-initdb.d/init-order-schema.sql
+      - ../userservice/db/init-user-schema.sql:/docker-entrypoint-initdb.d/init-user-schema.sql
+      - ../authenticationservice/db/init-auth-schema.sql:/docker-entrypoint-initdb.d/init-auth-schema.sql
+      - ../orderservice/db/init-order-schema.sql:/docker-entrypoint-initdb.d/init-order-schema.sql
     ports:
       - "${DATABASE_PORT:-5432}:5432"
     healthcheck:
