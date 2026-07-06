@@ -2,6 +2,7 @@ package com.innowise.gateway.config.security;
 
 import com.innowise.commonstarter.security.JwtTokenProvider;
 import java.util.List;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -16,6 +17,7 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+@Slf4j
 @Component
 public class ReactiveJwtTokenFilter implements WebFilter {
 
@@ -43,7 +45,10 @@ public class ReactiveJwtTokenFilter implements WebFilter {
                 .contextWrite(
                     ReactiveSecurityContextHolder.withSecurityContext(Mono.just(context)));
           })
-          .onErrorResume(e -> Mono.error(new BadCredentialsException("Invalid token")));
+          .onErrorResume(e -> {
+            log.warn("JWT validation failed: {}", e.getMessage());
+            return Mono.error(new BadCredentialsException("Invalid token"));
+          });
     }
     return chain.filter(exchange);
   }
