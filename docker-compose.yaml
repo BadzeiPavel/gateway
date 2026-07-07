@@ -11,6 +11,7 @@ services:
       AUTH_SERVICE_HOST: ${AUTH_CONTAINER_NAME:-auth-service}
       USER_SERVICE_HOST: ${USER_CONTAINER_NAME:-user-service}
       ORDER_SERVICE_HOST: ${ORDER_CONTAINER_NAME:-order-service}
+      PAYMENT_SERVICE_HOST: ${PAYMENT_CONTAINER_NAME:-payment-service}
       JWT_SECRET: ${JWT_SECRET}
     networks:
       - app_net
@@ -21,8 +22,10 @@ services:
         condition: service_healthy
       order-service:
         condition: service_healthy
+      payment-service:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1" ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -54,7 +57,7 @@ services:
     networks:
       - app_net
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8082/actuator/health || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8082/actuator/health || exit 1" ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -87,7 +90,7 @@ services:
     networks:
       - app_net
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8081/actuator/health || exit 1" ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -108,15 +111,52 @@ services:
       DATABASE_USERNAME: ${POSTGRES_USER:-postgres}
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       USER_SERVICE_URL: http://${USER_CONTAINER_NAME:-user-service}:8081
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_CONTAINER_NAME:-kafka}:9092
+      KAFKA_TOPICS_PAYMENT_EVENTS: payment-events
+      KAFKA_TOPICS_PAYMENT_COMPENSATION: payment-compensation
     ports:
       - "${ORDER_SERVICE_PORT:-8083}:8083"
     depends_on:
       postgres:
         condition: service_healthy
+      kafka:
+        condition: service_healthy
     networks:
       - app_net
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8083/actuator/health || exit 1" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  payment-service:
+    build: ../paymentservice
+    container_name: ${PAYMENT_CONTAINER_NAME:-payment-service}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      MONGODB_URI: mongodb://${MONGO_CONTAINER_NAME:-mongo}:27017/${MONGO_DB_NAME:-payment_db}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_CONTAINER_NAME:-kafka}:9092
+      KAFKA_TOPICS_PAYMENT_EVENTS: payment-events
+      KAFKA_TOPICS_PAYMENT_COMPENSATION: payment-compensation
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ACCESS_TOKEN_EXPIRATION: ${JWT_ACCESS_TOKEN_EXPIRATION}
+      JWT_REFRESH_TOKEN_EXPIRATION: ${JWT_REFRESH_TOKEN_EXPIRATION}
+      RANDOM_API_URL: ${RANDOM_API_URL:-https://www.random.org/integers/?num=1&min=1&max=10&col=1&base=10&format=plain}
+    ports:
+      - "${PAYMENT_SERVICE_PORT:-8084}:8084"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -f http://localhost:8084/actuator/health || exit 1" ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -138,7 +178,7 @@ services:
     ports:
       - "${DATABASE_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -152,7 +192,7 @@ services:
     ports:
       - "${REDIS_PORT:-6379}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -161,9 +201,50 @@ services:
     volumes:
       - redis_data:/data
 
+  mongo:
+    image: mongo:6
+    container_name: ${MONGO_CONTAINER_NAME:-mongo}
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: apache/kafka:latest
+    container_name: ${KAFKA_CONTAINER_NAME:-kafka}
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - app_net
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 || exit 1" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
+  mongo_data:
 
 networks:
   app_net:
